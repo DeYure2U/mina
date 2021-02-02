@@ -83,9 +83,10 @@ module User_command = struct
     ; txn_global_slot: int64
     ; sequence_no: int
     ; status: string
-    ; fee_payer_balance: int64
-    ; source_balance: int64 option
-    ; receiver_balance: int64 option }
+    ; created_token: int64 option
+    ; fee_payer_balance: int
+    ; source_balance: int option
+    ; receiver_balance: int option }
   [@@deriving hlist]
 
   let typ =
@@ -108,9 +109,10 @@ module User_command = struct
         ; int64
         ; int
         ; string
-        ; int64
         ; option int64
-        ; option int64 ]
+        ; int
+        ; option int
+        ; option int ]
     in
     let encode t = Ok (hlist_to_tuple spec (to_hlist t)) in
     let decode t = Ok (of_hlist (tuple_to_hlist spec t)) in
@@ -120,7 +122,7 @@ module User_command = struct
     Caqti_request.collect Caqti_type.int typ
       {sql| SELECT type,fee_payer_id, source_id,receiver_id,fee,fee_token,token,amount,valid_until,memo,nonce,
                    blocks.id,blocks.global_slot,parent.global_slot_since_genesis,
-                   sequence_no,status,
+                   sequence_no,status,created_token,
                    fee_payer_balance, source_balance, receiver_balance
 
             FROM (SELECT * FROM user_commands WHERE id = ?) AS uc
@@ -226,9 +228,9 @@ end
 module Public_key = struct
   let query =
     Caqti_request.find_opt Caqti_type.int Caqti_type.string
-      {sql|
-         SELECT value FROM public_keys WHERE id = ?
-       |sql}
+      {sql| SELECT value FROM public_keys
+            WHERE id = ?
+      |sql}
 
   let run (module Conn : Caqti_async.CONNECTION) pk_id =
     Conn.find_opt query pk_id
@@ -302,4 +304,18 @@ module Fork_block = struct
   let get_state_hash (module Conn : Caqti_async.CONNECTION)
       epoch_ledgers_state_hash =
     Conn.find query_state_hash epoch_ledgers_state_hash
+end
+
+module Balance = struct
+  let query =
+    Caqti_request.find_opt
+      Caqti_type.(tup2 int int)
+      Caqti_type.int64
+      {sql| SELECT balance FROM balances
+            WHERE id = $1
+            AND public_key_id = $2
+      |sql}
+
+  let run (module Conn : Caqti_async.CONNECTION) ~id ~pk_id =
+    Conn.find_opt query (id, pk_id)
 end
